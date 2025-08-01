@@ -10,8 +10,51 @@ use {
 };
 
 /// JWT [extractor](https://docs.rs/axum/latest/axum/extract/index.html) type.
+///
+/// # Examples
+///
+/// Extract the [header](Header) and claims from a token:
+///
+/// ```
+/// use {
+///     axum_jwt::Token,
+///     serde::Deserialize,
+/// };
+///
+/// #[derive(Deserialize)]
+/// struct User {
+///     sub: String,
+/// }
+///
+/// async fn hello(Token { header, claims, .. }: Token<User>) -> String {
+///     format!("decoded with {:?} algorithm: {}", header.alg, claims.sub)
+/// }
+/// ```
+///
+/// Note that to extract a token, the application
+/// [state](https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state)
+/// must contain a [decoder](Decoder).
+///
+/// ```
+/// use {
+///     axum::{Router, routing},
+///     axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
+/// };
+///
+/// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+///
+/// # async fn hello() {}
+/// let app = Router::new()
+///     .route("/", routing::get(hello))
+///     .with_state(decoder);
+/// # let _: Router = app;
+/// ```
 #[derive(Clone, Debug)]
-pub struct Token<T, X = AuthorizationExtract> {
+pub struct Token<T, X = AuthorizationExtract>
+where
+    T: DeserializeOwned,
+    X: Extract,
+{
     pub header: Header,
     pub claims: T,
     pub exrtact: X,
@@ -40,8 +83,49 @@ where
 }
 
 /// JWT [extractor](https://docs.rs/axum/latest/axum/extract/index.html) type returning only claims.
+///
+/// # Examples
+///
+/// Extract user claims:
+///
+/// ```
+/// use {
+///     axum_jwt::Claims,
+///     serde::Deserialize,
+/// };
+///
+/// #[derive(Deserialize)]
+/// struct User {
+///     sub: String,
+/// }
+///
+/// async fn hello(Claims(u): Claims<User>) -> String {
+///     format!("Hello, {}!", u.sub)
+/// }
+/// ```
+///
+/// Note that to extract a token, the application
+/// [state](https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state)
+/// must contain a [decoder](Decoder).
+///
+/// ```
+/// use {
+///     axum::{Router, routing},
+///     axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
+/// };
+///
+/// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+///
+/// # async fn hello() {}
+/// let app = Router::new()
+///     .route("/", routing::get(hello))
+///     .with_state(decoder);
+/// # let _: Router = app;
+/// ```
 #[derive(Clone, Copy, Debug)]
-pub struct Claims<T>(pub T);
+pub struct Claims<T>(pub T)
+where
+    T: DeserializeOwned;
 
 impl<S, T> FromRequestParts<S> for Claims<T>
 where

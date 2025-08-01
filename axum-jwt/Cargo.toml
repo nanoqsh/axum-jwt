@@ -1,0 +1,23 @@
+[package]
+name = "axum-jwt"
+description = "Axum JWT extractors and middleware"
+documentation = "https://docs.rs/axum-jwt"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum-core.workspace = true
+http.workspace = true
+jsonwebtoken.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+serde = { workspace = true, features = ["derive"] }
