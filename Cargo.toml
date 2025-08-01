@@ -2,13 +2,14 @@
 name = "axum-jwt"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+authors = ["nanoqsh"]
 description = "Axum JWT extractors and middleware"
 documentation = "https://docs.rs/axum-jwt"
 readme = "README.md"
 keywords = ["jwt", "axum"]
 categories = [
     "authentication",
-    "network-programming",
     "web-programming",
     "web-programming::http-server",
 ]
