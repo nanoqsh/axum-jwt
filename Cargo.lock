@@ -74,6 +74,8 @@ dependencies = [
  "http",
  "jsonwebtoken",
  "serde",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]

@@ -1,10 +1,7 @@
 use {
-    crate::decode::Decoder,
-    axum_core::{
-        extract::{FromRef, FromRequestParts},
-        response::{IntoResponse, Response},
-    },
-    http::{StatusCode, request::Parts},
+    crate::{decode::Decoder, error::Error},
+    axum_core::extract::{FromRef, FromRequestParts},
+    http::request::Parts,
     jsonwebtoken::{Header, TokenData},
     serde::de::DeserializeOwned,
 };
@@ -161,21 +158,5 @@ impl Extract for Bearer {
         let auth = parts.headers.get("Authorization")?;
         let token = auth.as_bytes().strip_prefix(b"Bearer ")?;
         str::from_utf8(token).ok()
-    }
-}
-
-/// Errors that can occur during authentication.
-#[derive(Debug)]
-pub enum Error {
-    /// Failed to extract authentication data from the request.
-    Extract,
-
-    /// JWT error.
-    Jwt(jsonwebtoken::errors::Error),
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        StatusCode::UNAUTHORIZED.into_response()
     }
 }
