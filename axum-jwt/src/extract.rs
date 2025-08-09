@@ -50,7 +50,7 @@ use {
 /// # let _: Router = app;
 /// ```
 #[derive(Clone, Debug)]
-pub struct Token<T, X = AuthorizationExtract>
+pub struct Token<T, X = Bearer>
 where
     T: DeserializeOwned,
     X: Extract,
@@ -70,7 +70,7 @@ where
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let token = X::exrtact(parts).ok_or(Error::AuthorizationHeader)?;
+        let token = X::exrtact(parts).ok_or(Error::Extract)?;
         let decoder = Decoder::from_ref(state);
         let TokenData { header, claims } = decoder.decode(token).map_err(Error::Jwt)?;
 
@@ -136,9 +136,7 @@ where
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let Token { claims, .. }: Token<_, AuthorizationExtract> =
-            Token::from_request_parts(parts, state).await?;
-
+        let Token { claims, .. }: Token<_> = Token::from_request_parts(parts, state).await?;
         Ok(Claims(claims))
     }
 }
@@ -148,11 +146,11 @@ pub trait Extract: Default {
     fn exrtact(parts: &mut Parts) -> Option<&str>;
 }
 
-/// The token extraction from `Authorization` header.
+/// The token extraction from a header with `Bearer` authentication scheme.
 #[derive(Clone, Debug, Default)]
-pub struct AuthorizationExtract;
+pub struct Bearer;
 
-impl Extract for AuthorizationExtract {
+impl Extract for Bearer {
     fn exrtact(parts: &mut Parts) -> Option<&str> {
         let auth = parts.headers.get("Authorization")?;
         let token = auth.as_bytes().strip_prefix(b"Bearer ")?;
@@ -163,7 +161,7 @@ impl Extract for AuthorizationExtract {
 /// Authorization error.
 #[derive(Debug)]
 pub enum Error {
-    AuthorizationHeader,
+    Extract,
     Jwt(jsonwebtoken::errors::Error),
 }
 

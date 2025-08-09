@@ -4,7 +4,7 @@ mod extract;
 pub use {
     crate::{
         decode::Decoder,
-        extract::{AuthorizationExtract, Claims, Error, Extract, Token},
+        extract::{Bearer, Claims, Error, Extract, Token},
     },
     jsonwebtoken,
 };
