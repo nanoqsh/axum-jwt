@@ -9,7 +9,9 @@ use {
     serde::de::DeserializeOwned,
 };
 
-/// JWT [extractor](https://docs.rs/axum/latest/axum/extract/index.html) type.
+/// JWT [extractor] type.
+///
+/// [extractor]: https://docs.rs/axum/latest/axum/extract/index.html
 ///
 /// # Examples
 ///
@@ -31,9 +33,10 @@ use {
 /// }
 /// ```
 ///
-/// Note that to extract a token, the application
-/// [state](https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state)
-/// must contain a [decoder](Decoder).
+/// Note that to extract a token, the application [state] must contain
+/// a [decoder](Decoder).
+///
+/// [state]: https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state
 ///
 /// ```
 /// use {
@@ -82,7 +85,9 @@ where
     }
 }
 
-/// JWT [extractor](https://docs.rs/axum/latest/axum/extract/index.html) type returning only claims.
+/// JWT [extractor] type returning only claims.
+///
+/// [extractor]: https://docs.rs/axum/latest/axum/extract/index.html
 ///
 /// # Examples
 ///
@@ -104,9 +109,10 @@ where
 /// }
 /// ```
 ///
-/// Note that to extract a token, the application
-/// [state](https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state)
-/// must contain a [decoder](Decoder).
+/// Note that to extract a token, the application [state] must contain
+/// a [decoder](Decoder).
+///
+/// [state]: https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state
 ///
 /// ```
 /// use {
@@ -158,10 +164,13 @@ impl Extract for Bearer {
     }
 }
 
-/// Authorization error.
+/// Errors that can occur during authentication.
 #[derive(Debug)]
 pub enum Error {
+    /// Failed to extract authentication data from the request.
     Extract,
+
+    /// JWT error.
     Jwt(jsonwebtoken::errors::Error),
 }
 

@@ -7,9 +7,11 @@ use {
 
 /// A decoder for JSON Web Tokens (JWTs).
 ///
-/// To extract a JWT value from a request header, this decoder must be provided to the
-/// [router](https://docs.rs/axum/latest/axum/struct.Router.html) using the
-/// [`with_state`](https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state) method.
+/// To extract a JWT value from a request header, this decoder must be provided
+/// to the [router] using the [`with_state`] method.
+///
+/// [router]: https://docs.rs/axum/latest/axum/struct.Router.html
+/// [`with_state`]: https://docs.rs/axum/latest/axum/struct.Router.html#method.with_state
 ///
 /// # Examples
 ///
@@ -39,10 +41,11 @@ use {
 /// # let _: Router = app;
 /// ```
 ///
-/// If, in addition to the decoder, the application needs to store additional state,
-/// you can define a custom type that contains the decoder. You'll also need the application
-/// state to be cheap to clone, so it makes sense to wrap it in an [`Arc`]. In this case, you
-/// can provide the decoder by implementing the [`AsRef`] trait for your custom state.
+/// If the application needs to store additional state, you can define a custom
+/// type that contains the decoder. You'll also need the application state to
+/// be cheap to clone, so it makes sense to wrap it in an [`Arc`]. In this
+/// case, you can provide the decoder by implementing the [`AsRef`] trait for
+/// your custom state.
 ///
 /// ```
 /// # use {
