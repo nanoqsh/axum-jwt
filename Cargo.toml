@@ -3,7 +3,7 @@ resolver = "3"
 members = ["axum-jwt", "examples/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 authors = ["nanoqsh"]
@@ -17,7 +17,7 @@ repository = "https://github.com/nanoqsh/axum-jwt"
 rust-version = "1.88"
 
 [workspace.dependencies]
-axum-jwt = { version = "0.1.0", path = "axum-jwt" }
+axum-jwt = { version = "0.1.1", path = "axum-jwt" }
 axum = { version = "0.8.4", default-features = false }
 axum-core = "0.5.2"
 http = "1.3.1"
