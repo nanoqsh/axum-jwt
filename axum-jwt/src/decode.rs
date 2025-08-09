@@ -107,9 +107,9 @@ impl Decoder {
         }
     }
 
-    /// Returns an iterator over the decoding keys.
-    pub fn keys(&self) -> impl Iterator<Item = &DecodingKey> {
-        self.0.keys.iter()
+    /// Returns a slice of decoding keys.
+    pub fn keys(&self) -> &[DecodingKey] {
+        &self.0.keys
     }
 
     /// Returns a reference to the validation.
