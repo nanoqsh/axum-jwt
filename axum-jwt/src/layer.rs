@@ -8,10 +8,12 @@ use {
         extract::Request,
         response::{IntoResponse, Response},
     },
+    http::StatusCode,
     jsonwebtoken::TokenData,
-    serde::de::IgnoredAny,
+    serde::de::{DeserializeOwned, IgnoredAny},
     std::{
         convert::Infallible,
+        marker::PhantomData,
         mem,
         pin::Pin,
         task::{self, Context, Poll},
@@ -20,33 +22,134 @@ use {
     tower_service::Service,
 };
 
-#[derive(Clone)]
-pub struct JwtLayer(Decoder);
+#[derive(Clone, Debug)]
+pub struct JwtLayer<H = Discard> {
+    decoder: Decoder,
+    handle: H,
+}
 
-impl<S> Layer<S> for JwtLayer {
-    type Service = Jwt<S>;
+impl JwtLayer {
+    pub fn filter<F, I, O>(self, f: F) -> JwtLayer<Filter<F, I>>
+    where
+        F: FnMut(I) -> O,
+        I: DeserializeOwned,
+        O: Output,
+    {
+        JwtLayer {
+            decoder: self.decoder,
+            handle: Filter {
+                f,
+                input: PhantomData,
+            },
+        }
+    }
+}
+
+impl<S, H> Layer<S> for JwtLayer<H>
+where
+    H: Clone,
+{
+    type Service = Jwt<S, H>;
 
     fn layer(&self, svc: S) -> Self::Service {
         Jwt {
-            decoder: self.0.clone(),
+            decoder: self.decoder.clone(),
+            handle: self.handle.clone(),
             svc,
         }
     }
 }
 
 pub fn layer(decoder: Decoder) -> JwtLayer {
-    JwtLayer(decoder)
+    JwtLayer {
+        decoder,
+        handle: Discard,
+    }
+}
+
+pub trait Handle {
+    type Input: DeserializeOwned;
+    type Output: Output;
+    fn handle(&mut self, input: Self::Input) -> Self::Output;
+}
+
+pub trait Output {
+    fn output(self) -> Option<Response>;
+}
+
+impl<E> Output for Result<(), E>
+where
+    E: IntoResponse,
+{
+    fn output(self) -> Option<Response> {
+        self.err().map(E::into_response)
+    }
+}
+
+impl Output for bool {
+    fn output(self) -> Option<Response> {
+        if self {
+            None
+        } else {
+            Some(StatusCode::UNAUTHORIZED.into_response())
+        }
+    }
 }
 
 #[derive(Clone)]
-pub struct Jwt<S> {
+pub struct Discard;
+
+impl Handle for Discard {
+    type Input = IgnoredAny;
+    type Output = bool;
+
+    fn handle(&mut self, _: Self::Input) -> Self::Output {
+        true
+    }
+}
+
+pub struct Filter<F, A> {
+    f: F,
+    input: PhantomData<A>,
+}
+
+impl<F, A> Clone for Filter<F, A>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            input: PhantomData,
+        }
+    }
+}
+
+impl<F, I, O> Handle for Filter<F, I>
+where
+    F: FnMut(I) -> O,
+    I: DeserializeOwned,
+    O: Output,
+{
+    type Input = I;
+    type Output = O;
+
+    fn handle(&mut self, input: Self::Input) -> Self::Output {
+        (self.f)(input)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Jwt<S, H = Discard> {
     decoder: Decoder,
+    handle: H,
     svc: S,
 }
 
-impl<S> Service<Request> for Jwt<S>
+impl<S, H> Service<Request> for Jwt<S, H>
 where
     S: Service<Request> + Clone,
+    H: Handle,
     Result<S::Response, S::Error>: IntoResponse,
 {
     type Response = Response;
@@ -58,18 +161,21 @@ where
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
-        let validate = |parts| -> Result<(), Error> {
+        let validate = |parts| -> Result<H::Input, Error> {
             let token = Bearer::exrtact(parts).ok_or(Error::Extract)?;
-            let TokenData {
-                claims: IgnoredAny, ..
-            } = self.decoder.decode(token).map_err(Error::Jwt)?;
+            let TokenData { claims, .. }: TokenData<H::Input> =
+                self.decoder.decode(token).map_err(Error::Jwt)?;
 
-            Ok(())
+            Ok(claims)
         };
 
         let (mut parts, body) = req.into_parts();
         match validate(&mut parts) {
-            Ok(()) => {
+            Ok(claims) => {
+                if let Some(res) = self.handle.handle(claims).output() {
+                    return JwtFuture::Ready { res };
+                }
+
                 let req = Request::from_parts(parts, body);
                 let clone = self.svc.clone();
                 let svc = mem::replace(&mut self.svc, clone);
@@ -128,7 +234,7 @@ where
                     self.set(Self::Done);
                     break res;
                 }
-                JwtFutureProj::Done => unreachable!(),
+                JwtFutureProj::Done => panic!("polled after completion"),
             }
         };
 
