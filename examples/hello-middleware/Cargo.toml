@@ -1,5 +1,5 @@
 [package]
-name = "hello_middleware"
+name = "hello-middleware"
 version.workspace = true
 edition.workspace = true
 
