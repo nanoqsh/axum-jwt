@@ -10,7 +10,7 @@ use {
         extract::Request,
         response::{IntoResponse, Response},
     },
-    http::{StatusCode, request},
+    http::{Extensions, StatusCode},
     jsonwebtoken::TokenData,
     serde::de::{DeserializeOwned, IgnoredAny},
     std::{
@@ -27,40 +27,31 @@ use {
 };
 
 /// Layer type for creating middleware.
-pub struct JwtLayer<H = Discard, X = Bearer>
-where
-    H: Validate,
-{
+pub struct JwtLayer<I, H = Discard, X = Bearer> {
     decoder: Decoder,
     validate: H,
-    store: fn(H::Input, &mut request::Parts),
+    store: fn(I, &mut Extensions),
     extract: PhantomData<X>,
 }
 
-impl<X> JwtLayer<Discard, X> {
-    pub fn with_filter<F, I, O>(self, f: F) -> JwtLayer<Filter<F, I>, X>
+impl<I, X> JwtLayer<I, Discard, X> {
+    pub fn with_filter<H, N, O>(self, validate: H) -> JwtLayer<N, H, X>
     where
-        F: FnMut(&I) -> O,
-        I: DeserializeOwned,
+        H: FnMut(&N) -> O,
+        N: DeserializeOwned,
         O: Output,
     {
         JwtLayer {
             decoder: self.decoder,
-            validate: Filter {
-                f,
-                input: PhantomData,
-            },
+            validate,
             store: |_, _| {},
             extract: PhantomData,
         }
     }
 }
 
-impl<H> JwtLayer<H, Bearer>
-where
-    H: Validate,
-{
-    pub fn with_extract<X>(self, extract: X) -> JwtLayer<H, X>
+impl<I, H> JwtLayer<I, H, Bearer> {
+    pub fn with_extract<X>(self, extract: X) -> JwtLayer<I, H, X>
     where
         X: Extract,
     {
@@ -72,27 +63,23 @@ where
             extract: PhantomData,
         }
     }
-}
 
-impl<F, I> JwtLayer<Filter<F, I>, Bearer>
-where
-    Filter<F, I>: Validate<Input = I>,
-{
-    pub fn store_to_extension(mut self) -> Self
+    pub fn store_to_extension<O>(mut self) -> Self
     where
+        H: FnMut(&I) -> O,
         I: Clone + Send + Sync + 'static,
     {
-        self.store = |claims, parts| {
-            parts.extensions.insert(claims);
+        self.store = |claims, extensions| {
+            extensions.insert(claims);
         };
 
         self
     }
 }
 
-impl<H, X> Clone for JwtLayer<H, X>
+impl<I, H, X> Clone for JwtLayer<I, H, X>
 where
-    H: Validate + Clone,
+    H: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -104,25 +91,22 @@ where
     }
 }
 
-impl<H, X> fmt::Debug for JwtLayer<H, X>
-where
-    H: Validate + fmt::Debug,
-{
+impl<I, H, X> fmt::Debug for JwtLayer<I, H, X> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JwtLayer")
             .field("decoder", &self.decoder)
-            .field("validate", &self.validate)
-            .field("store", &self.store)
+            .field("validate", &"..")
+            .field("store", &"..")
             .field("extract", &any::type_name::<H>())
             .finish()
     }
 }
 
-impl<S, H> Layer<S> for JwtLayer<H>
+impl<S, I, H, X> Layer<S> for JwtLayer<I, H, X>
 where
-    H: Validate + Clone,
+    H: Clone,
 {
-    type Service = Jwt<S, H>;
+    type Service = Jwt<S, I, H>;
 
     fn layer(&self, svc: S) -> Self::Service {
         Jwt {
@@ -136,7 +120,7 @@ where
 }
 
 /// Creates a layer for middleware.
-pub fn layer(decoder: Decoder) -> JwtLayer {
+pub fn layer(decoder: Decoder) -> JwtLayer<IgnoredAny> {
     JwtLayer {
         decoder,
         validate: Discard,
@@ -146,10 +130,9 @@ pub fn layer(decoder: Decoder) -> JwtLayer {
 }
 
 /// Trait for additional token validation.
-pub trait Validate {
-    type Input: DeserializeOwned;
+pub trait Validate<I> {
     type Output: Output;
-    fn validate(&mut self, input: &Self::Input) -> Self::Output;
+    fn validate(&mut self, input: &I) -> Self::Output;
 }
 
 /// The output value of the [validation](Validate).
@@ -177,77 +160,45 @@ impl Output for bool {
 }
 
 /// Discards any token data and returns success.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Discard;
 
-impl Validate for Discard {
-    type Input = IgnoredAny;
+impl<I> Validate<I> for Discard {
     type Output = bool;
 
-    fn validate(&mut self, _: &Self::Input) -> Self::Output {
+    fn validate(&mut self, _: &I) -> Self::Output {
         true
     }
 }
 
-/// Applies a validation function and returns its result.
-pub struct Filter<F, I> {
-    f: F,
-    input: PhantomData<I>,
-}
-
-impl<F, I> Clone for Filter<F, I>
-where
-    F: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            f: self.f.clone(),
-            input: PhantomData,
-        }
-    }
-}
-
-impl<F, I> fmt::Debug for Filter<F, I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Filter")
-            .field("f", &"..")
-            .field("input", &any::type_name::<I>())
-            .finish()
-    }
-}
-
-impl<F, I, O> Validate for Filter<F, I>
+impl<F, I, O> Validate<I> for F
 where
     F: FnMut(&I) -> O,
     I: DeserializeOwned,
     O: Output,
 {
-    type Input = I;
     type Output = O;
 
-    fn validate(&mut self, input: &Self::Input) -> Self::Output {
-        (self.f)(input)
+    fn validate(&mut self, input: &I) -> Self::Output {
+        self(input)
     }
 }
 
 /// Axum [middleware] for token validation.
 ///
 /// [middleware]: https://docs.rs/axum/latest/axum/middleware/index.html
-pub struct Jwt<S, H = Discard, X = Bearer>
-where
-    H: Validate,
-{
+pub struct Jwt<S, I, H = Discard, X = Bearer> {
     svc: S,
     decoder: Decoder,
     validate: H,
-    store: fn(H::Input, &mut request::Parts),
+    store: fn(I, &mut Extensions),
     extract: PhantomData<X>,
 }
 
-impl<S, H, X> Clone for Jwt<S, H, X>
+impl<S, I, H, X> Clone for Jwt<S, I, H, X>
 where
     S: Clone,
-    H: Validate + Clone,
+    H: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -260,26 +211,26 @@ where
     }
 }
 
-impl<S, H, X> fmt::Debug for Jwt<S, H, X>
+impl<S, I, H, X> fmt::Debug for Jwt<S, I, H, X>
 where
     S: fmt::Debug,
-    H: Validate + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Jwt")
             .field("svc", &self.svc)
             .field("decoder", &self.decoder)
-            .field("validate", &self.validate)
-            .field("store", &self.store)
+            .field("validate", &"..")
+            .field("store", &"..")
             .field("extract", &any::type_name::<X>())
             .finish()
     }
 }
 
-impl<S, H, X> Service<Request> for Jwt<S, H, X>
+impl<S, I, H, X> Service<Request> for Jwt<S, I, H, X>
 where
     S: Service<Request> + Clone,
-    H: Validate,
+    I: DeserializeOwned,
+    H: Validate<I>,
     X: Extract,
     Result<S::Response, S::Error>: IntoResponse,
 {
@@ -292,9 +243,9 @@ where
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
-        let validate = |parts| -> Result<H::Input, Error> {
+        let validate = |parts| -> Result<I, Error> {
             let token = X::extract(parts).ok_or(Error::Extract)?;
-            let TokenData { claims, .. }: TokenData<H::Input> =
+            let TokenData { claims, .. }: TokenData<I> =
                 self.decoder.decode(token).map_err(Error::Jwt)?;
 
             Ok(claims)
@@ -307,7 +258,7 @@ where
                     return JwtFuture::ready(res);
                 }
 
-                (self.store)(claims, &mut parts);
+                (self.store)(claims, &mut parts.extensions);
 
                 let req = Request::from_parts(parts, body);
                 let clone = self.svc.clone();
