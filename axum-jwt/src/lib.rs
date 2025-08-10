@@ -3,14 +3,14 @@
 mod decode;
 mod error;
 mod extract;
-mod layer;
+pub mod layer;
 
 pub use {
     crate::{
         decode::Decoder,
         error::Error,
         extract::{Bearer, Claims, Extract, Token},
-        layer::{Jwt, layer},
+        layer::layer,
     },
     jsonwebtoken,
 };

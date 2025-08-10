@@ -1,0 +1,10 @@
+[package]
+name = "hello_middleware"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum-jwt.workspace = true
+axum = { workspace = true, features = ["http1", "tokio"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+serde = { workspace = true, features = ["derive"] }

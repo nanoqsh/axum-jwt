@@ -1,6 +1,6 @@
 use {
     axum::{Router, routing},
-    axum_jwt::{Claims, Decoder, jsonwebtoken::DecodingKey},
+    axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
     serde::Deserialize,
     std::io::Result,
     tokio::net::TcpListener,
@@ -8,11 +8,15 @@ use {
 
 #[derive(Deserialize)]
 struct User {
-    sub: String,
+    roles: Vec<String>,
 }
 
-async fn hello(Claims(u): Claims<User>) -> String {
-    format!("Hello, {}!", u.sub)
+async fn hello() -> &'static str {
+    "Hello, Admin!"
+}
+
+fn check_access(u: User) -> bool {
+    u.roles.iter().any(|role| role == "admin")
 }
 
 #[tokio::main]
@@ -21,7 +25,9 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/", routing::get(hello))
-        .with_state(decoder);
+        // This layer will validate the token
+        // and check the presence of the role
+        .layer(axum_jwt::layer(decoder).with_filter(check_access));
 
     let listener = TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app).await
