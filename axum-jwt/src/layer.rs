@@ -20,38 +20,38 @@ use {
     tower_service::Service,
 };
 
-pub fn layer<S>(decoder: Decoder) -> impl Layer<S, Service = Middleware<S>> + Clone {
-    #[derive(Clone)]
-    struct Jwt(Decoder);
+#[derive(Clone)]
+pub struct JwtLayer(Decoder);
 
-    impl<S> Layer<S> for Jwt {
-        type Service = Middleware<S>;
+impl<S> Layer<S> for JwtLayer {
+    type Service = Jwt<S>;
 
-        fn layer(&self, svc: S) -> Self::Service {
-            Middleware {
-                decoder: self.0.clone(),
-                svc,
-            }
+    fn layer(&self, svc: S) -> Self::Service {
+        Jwt {
+            decoder: self.0.clone(),
+            svc,
         }
     }
+}
 
-    Jwt(decoder)
+pub fn layer(decoder: Decoder) -> JwtLayer {
+    JwtLayer(decoder)
 }
 
 #[derive(Clone)]
-pub struct Middleware<S> {
+pub struct Jwt<S> {
     decoder: Decoder,
     svc: S,
 }
 
-impl<S> Service<Request> for Middleware<S>
+impl<S> Service<Request> for Jwt<S>
 where
-    S: Service<Request> + Clone + Unpin,
+    S: Service<Request> + Clone,
     Result<S::Response, S::Error>: IntoResponse,
 {
     type Response = Response;
     type Error = Infallible;
-    type Future = MiddlewareFuture<S>;
+    type Future = JwtFuture<S>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -73,55 +73,62 @@ where
                 let req = Request::from_parts(parts, body);
                 let clone = self.svc.clone();
                 let svc = mem::replace(&mut self.svc, clone);
-                MiddlewareFuture::NotReady { svc, req }
+                JwtFuture::NotReady { svc, req }
             }
-            Err(e) => MiddlewareFuture::Ready(e.into_response()),
+            Err(e) => JwtFuture::Ready {
+                res: e.into_response(),
+            },
         }
     }
 }
 
-pub enum MiddlewareFuture<S>
-where
-    S: Service<Request>,
-{
-    NotReady { svc: S, req: Request },
-    Called { fut: Pin<Box<S::Future>> },
-    Ready(Response),
-    Done,
+pin_project_lite::pin_project! {
+    #[project = JwtFutureProj]
+    pub enum JwtFuture<S>
+    where
+        S: Service<Request>,
+    {
+        NotReady { svc: S, req: Request },
+        Called {
+            #[pin]
+            fut: S::Future,
+        },
+        Ready { res: Response },
+        Done,
+    }
 }
 
-impl<S> Future for MiddlewareFuture<S>
+impl<S> Future for JwtFuture<S>
 where
-    S: Service<Request> + Unpin,
+    S: Service<Request>,
     Result<S::Response, S::Error>: IntoResponse,
 {
     type Output = Result<Response, Infallible>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let me = self.get_mut();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let res = loop {
-            match me {
-                Self::NotReady { svc, req } => {
+            match self.as_mut().project() {
+                JwtFutureProj::NotReady { svc, req } => {
                     if let Err(e) = task::ready!(svc.poll_ready(cx)) {
-                        *me = Self::Done;
+                        self.set(Self::Done);
                         break Err(e).into_response();
                     }
 
                     let req = mem::take(req);
                     let fut = svc.call(req);
-                    *me = Self::Called { fut: Box::pin(fut) };
+                    self.set(Self::Called { fut });
                 }
-                Self::Called { fut } => {
-                    let res = task::ready!(fut.as_mut().poll(cx));
-                    *me = Self::Done;
+                JwtFutureProj::Called { fut } => {
+                    let res = task::ready!(fut.poll(cx));
+                    self.set(Self::Done);
                     break res.into_response();
                 }
-                Self::Ready(res) => {
+                JwtFutureProj::Ready { res } => {
                     let res = mem::take(res);
-                    *me = Self::Done;
+                    self.set(Self::Done);
                     break res;
                 }
-                Self::Done => unreachable!(),
+                JwtFutureProj::Done => unreachable!(),
             }
         };
 

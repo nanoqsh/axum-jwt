@@ -10,7 +10,7 @@ pub use {
         decode::Decoder,
         error::Error,
         extract::{Bearer, Claims, Extract, Token},
-        layer::{Middleware, layer},
+        layer::{Jwt, layer},
     },
     jsonwebtoken,
 };

@@ -73,6 +73,7 @@ dependencies = [
  "axum-core",
  "http",
  "jsonwebtoken",
+ "pin-project-lite",
  "serde",
  "tower-layer",
  "tower-service",

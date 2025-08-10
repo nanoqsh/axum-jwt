@@ -16,6 +16,7 @@ rust-version.workspace = true
 axum-core.workspace = true
 http.workspace = true
 jsonwebtoken.workspace = true
+pin-project-lite.workspace = true
 serde.workspace = true
 tower-layer.workspace = true
 tower-service.workspace = true
