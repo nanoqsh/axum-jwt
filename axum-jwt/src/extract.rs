@@ -4,6 +4,7 @@ use {
     http::request::Parts,
     jsonwebtoken::{Header, TokenData},
     serde::de::DeserializeOwned,
+    std::{any, fmt, marker::PhantomData},
 };
 
 /// JWT [extractor] type.
@@ -49,15 +50,46 @@ use {
 ///     .with_state(decoder);
 /// # let _: Router = app;
 /// ```
-#[derive(Clone, Debug)]
-pub struct Token<T, X = Bearer>
-where
-    T: DeserializeOwned,
-    X: Extract,
-{
+pub struct Token<T, X = Bearer> {
     pub header: Header,
     pub claims: T,
-    pub exrtact: X,
+    extract: PhantomData<X>,
+}
+
+impl<T, X> Token<T, X> {
+    pub fn new(header: Header, claims: T) -> Self {
+        Self {
+            header,
+            claims,
+            extract: PhantomData,
+        }
+    }
+}
+
+impl<T, X> Clone for Token<T, X>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            header: self.header.clone(),
+            claims: self.claims.clone(),
+            extract: PhantomData,
+        }
+    }
+}
+
+impl<T, X> fmt::Debug for Token<T, X>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Token")
+            .field("header", &self.header)
+            .field("claims", &self.claims)
+            .field("extract", &any::type_name::<X>())
+            .finish()
+    }
 }
 
 impl<S, T, X> FromRequestParts<S> for Token<T, X>
@@ -70,15 +102,10 @@ where
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let token = X::exrtact(parts).ok_or(Error::Extract)?;
+        let token = X::extract(parts).ok_or(Error::Extract)?;
         let decoder = Decoder::from_ref(state);
         let TokenData { header, claims } = decoder.decode(token).map_err(Error::Jwt)?;
-
-        Ok(Token {
-            header,
-            claims,
-            exrtact: X::default(),
-        })
+        Ok(Token::new(header, claims))
     }
 }
 
@@ -145,16 +172,15 @@ where
 }
 
 /// Trait for token extraction.
-pub trait Extract: Default {
-    fn exrtact(parts: &mut Parts) -> Option<&str>;
+pub trait Extract {
+    fn extract(parts: &mut Parts) -> Option<&str>;
 }
 
 /// The token extraction from a header with `Bearer` authentication scheme.
-#[derive(Clone, Debug, Default)]
 pub struct Bearer;
 
 impl Extract for Bearer {
-    fn exrtact(parts: &mut Parts) -> Option<&str> {
+    fn extract(parts: &mut Parts) -> Option<&str> {
         let auth = parts.headers.get("Authorization")?;
         let token = auth.as_bytes().strip_prefix(b"Bearer ")?;
         str::from_utf8(token).ok()

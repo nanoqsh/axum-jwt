@@ -12,7 +12,9 @@ use {
     jsonwebtoken::TokenData,
     serde::de::{DeserializeOwned, IgnoredAny},
     std::{
+        any,
         convert::Infallible,
+        fmt,
         marker::PhantomData,
         mem,
         pin::Pin,
@@ -22,14 +24,14 @@ use {
     tower_service::Service,
 };
 
-#[derive(Clone, Debug)]
-pub struct JwtLayer<H = Discard> {
+pub struct JwtLayer<H = Discard, X = Bearer> {
     decoder: Decoder,
     handle: H,
+    extract: PhantomData<X>,
 }
 
-impl JwtLayer {
-    pub fn filter<F, I, O>(self, f: F) -> JwtLayer<Filter<F, I>>
+impl<X> JwtLayer<Discard, X> {
+    pub fn filter<F, I, O>(self, f: F) -> JwtLayer<Filter<F, I>, X>
     where
         F: FnMut(I) -> O,
         I: DeserializeOwned,
@@ -41,7 +43,48 @@ impl JwtLayer {
                 f,
                 input: PhantomData,
             },
+            extract: PhantomData,
         }
+    }
+}
+
+impl<H> JwtLayer<H, Bearer> {
+    pub fn extract_with<X>(self, extract: X) -> JwtLayer<H, X>
+    where
+        X: Extract,
+    {
+        _ = extract;
+        JwtLayer {
+            decoder: self.decoder,
+            handle: self.handle,
+            extract: PhantomData,
+        }
+    }
+}
+
+impl<H, X> Clone for JwtLayer<H, X>
+where
+    H: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            decoder: self.decoder.clone(),
+            handle: self.handle.clone(),
+            extract: PhantomData,
+        }
+    }
+}
+
+impl<H, X> fmt::Debug for JwtLayer<H, X>
+where
+    H: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JwtLayer")
+            .field("decoder", &self.decoder)
+            .field("handle", &self.handle)
+            .field("extract", &any::type_name::<H>())
+            .finish()
     }
 }
 
@@ -53,9 +96,10 @@ where
 
     fn layer(&self, svc: S) -> Self::Service {
         Jwt {
+            svc,
             decoder: self.decoder.clone(),
             handle: self.handle.clone(),
-            svc,
+            extract: PhantomData,
         }
     }
 }
@@ -64,6 +108,7 @@ pub fn layer(decoder: Decoder) -> JwtLayer {
     JwtLayer {
         decoder,
         handle: Discard,
+        extract: PhantomData,
     }
 }
 
@@ -96,7 +141,7 @@ impl Output for bool {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Discard;
 
 impl Handle for Discard {
@@ -125,6 +170,15 @@ where
     }
 }
 
+impl<F, A> fmt::Debug for Filter<F, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Filter")
+            .field("f", &"..")
+            .field("input", &any::type_name::<A>())
+            .finish()
+    }
+}
+
 impl<F, I, O> Handle for Filter<F, I>
 where
     F: FnMut(I) -> O,
@@ -139,17 +193,48 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Jwt<S, H = Discard> {
+pub struct Jwt<S, H = Discard, X = Bearer> {
+    svc: S,
     decoder: Decoder,
     handle: H,
-    svc: S,
+    extract: PhantomData<X>,
 }
 
-impl<S, H> Service<Request> for Jwt<S, H>
+impl<S, H, X> Clone for Jwt<S, H, X>
+where
+    S: Clone,
+    H: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            svc: self.svc.clone(),
+            decoder: self.decoder.clone(),
+            handle: self.handle.clone(),
+            extract: PhantomData,
+        }
+    }
+}
+
+impl<S, H, X> fmt::Debug for Jwt<S, H, X>
+where
+    S: fmt::Debug,
+    H: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Jwt")
+            .field("svc", &self.svc)
+            .field("decoder", &self.decoder)
+            .field("handle", &self.handle)
+            .field("extract", &any::type_name::<X>())
+            .finish()
+    }
+}
+
+impl<S, H, X> Service<Request> for Jwt<S, H, X>
 where
     S: Service<Request> + Clone,
     H: Handle,
+    X: Extract,
     Result<S::Response, S::Error>: IntoResponse,
 {
     type Response = Response;
@@ -162,7 +247,7 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let validate = |parts| -> Result<H::Input, Error> {
-            let token = Bearer::exrtact(parts).ok_or(Error::Extract)?;
+            let token = X::extract(parts).ok_or(Error::Extract)?;
             let TokenData { claims, .. }: TokenData<H::Input> =
                 self.decoder.decode(token).map_err(Error::Jwt)?;
 
