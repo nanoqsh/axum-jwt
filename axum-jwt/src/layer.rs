@@ -14,9 +14,10 @@ use {
         convert::Infallible,
         mem,
         pin::Pin,
-        task::{Context, Poll},
+        task::{self, Context, Poll},
     },
-    tower::{Layer, Service, ServiceExt, util::Oneshot},
+    tower_layer::Layer,
+    tower_service::Service,
 };
 
 pub fn layer<S>(decoder: Decoder) -> impl Layer<S, Service = Middleware<S>> + Clone {
@@ -26,10 +27,10 @@ pub fn layer<S>(decoder: Decoder) -> impl Layer<S, Service = Middleware<S>> + Cl
     impl<S> Layer<S> for Jwt {
         type Service = Middleware<S>;
 
-        fn layer(&self, inner: S) -> Self::Service {
+        fn layer(&self, svc: S) -> Self::Service {
             Middleware {
                 decoder: self.0.clone(),
-                inner,
+                svc,
             }
         }
     }
@@ -40,17 +41,17 @@ pub fn layer<S>(decoder: Decoder) -> impl Layer<S, Service = Middleware<S>> + Cl
 #[derive(Clone)]
 pub struct Middleware<S> {
     decoder: Decoder,
-    inner: S,
+    svc: S,
 }
 
 impl<S> Service<Request> for Middleware<S>
 where
-    S: Service<Request> + Clone,
+    S: Service<Request> + Clone + Unpin,
     Result<S::Response, S::Error>: IntoResponse,
 {
     type Response = Response;
     type Error = Infallible;
-    type Future = MiddlewareFuture<Oneshot<S, Request>>;
+    type Future = MiddlewareFuture<S>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -70,40 +71,60 @@ where
         match validate(&mut parts) {
             Ok(()) => {
                 let req = Request::from_parts(parts, body);
-                let clone = self.inner.clone();
-                let inner = mem::replace(&mut self.inner, clone);
-                let fut = inner.oneshot(req);
-                MiddlewareFuture::Oneshot(Box::pin(fut))
+                let clone = self.svc.clone();
+                let svc = mem::replace(&mut self.svc, clone);
+                MiddlewareFuture::NotReady { svc, req }
             }
             Err(e) => MiddlewareFuture::Ready(e.into_response()),
         }
     }
 }
 
-pub enum MiddlewareFuture<F> {
-    Oneshot(Pin<Box<F>>),
+pub enum MiddlewareFuture<S>
+where
+    S: Service<Request>,
+{
+    NotReady { svc: S, req: Request },
+    Called { fut: Pin<Box<S::Future>> },
     Ready(Response),
-    End,
+    Done,
 }
 
-impl<F> Future for MiddlewareFuture<F>
+impl<S> Future for MiddlewareFuture<S>
 where
-    F: Future<Output: IntoResponse>,
+    S: Service<Request> + Unpin,
+    Result<S::Response, S::Error>: IntoResponse,
 {
     type Output = Result<Response, Infallible>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let me = self.get_mut();
-        match mem::replace(me, Self::End) {
-            Self::Oneshot(mut fut) => match Pin::new(&mut fut).poll(cx) {
-                Poll::Ready(res) => Poll::Ready(Ok(res.into_response())),
-                Poll::Pending => {
-                    *me = Self::Oneshot(fut);
-                    Poll::Pending
+        let res = loop {
+            match me {
+                Self::NotReady { svc, req } => {
+                    if let Err(e) = task::ready!(svc.poll_ready(cx)) {
+                        *me = Self::Done;
+                        break Err(e).into_response();
+                    }
+
+                    let req = mem::take(req);
+                    let fut = svc.call(req);
+                    *me = Self::Called { fut: Box::pin(fut) };
                 }
-            },
-            Self::Ready(res) => Poll::Ready(Ok(res)),
-            Self::End => unreachable!(),
-        }
+                Self::Called { fut } => {
+                    let res = task::ready!(fut.as_mut().poll(cx));
+                    *me = Self::Done;
+                    break res.into_response();
+                }
+                Self::Ready(res) => {
+                    let res = mem::take(res);
+                    *me = Self::Done;
+                    break res;
+                }
+                Self::Done => unreachable!(),
+            }
+        };
+
+        Poll::Ready(Ok(res))
     }
 }

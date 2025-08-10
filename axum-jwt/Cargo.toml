@@ -17,7 +17,8 @@ axum-core.workspace = true
 http.workspace = true
 jsonwebtoken.workspace = true
 serde.workspace = true
-tower = { workspace = true, features = ["util"] }
+tower-layer.workspace = true
+tower-service.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
