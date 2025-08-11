@@ -1,4 +1,46 @@
 //! Middleware types and traits.
+//!
+//! The [`layer`] function creates a configurable axum [middleware] layer.
+//! When a request is made to a handler wrapped in this layer, the
+//! JSON Web Token is validated. If validation succeeds, the handler is called.
+//! If validation fails, a `401 Unauthorized` status code is returned, though
+//! more fine-grained [configuration] is possible.
+//!
+//! [middleware]: https://docs.rs/axum/latest/axum/middleware/index.html
+//! [configuration]: #configuration
+//!
+//! # Examples
+//!
+//! ```
+//! use {
+//!     axum::{Router, routing},
+//!     axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
+//! };
+//!
+//! // This handler will be called only if the token is successfully validated.
+//! async fn hello() -> String {
+//!     "Hello, Anonimus!".to_owned()
+//! }
+//!
+//! let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+//!
+//! let app = Router::new()
+//!     .route("/", routing::get(hello))
+//!     .layer(axum_jwt::layer(decoder));
+//! # let _: Router = app;
+//! ```
+//!
+//! # Configuration
+//!
+//! The [`layer`] function accepts a [decoder](Decoder) that defines how to
+//! decode and validate the token.
+//!
+//! Additionally, the layer itself can be
+//! configured: set a [filter](JwtLayer::with_filter) to define the token's
+//! data type and perform extra checks, store the token in
+//! [extensions](JwtLayer::store_to_extension) so it can later be retrieved in
+//! the handler via an extractor, or specify a custom
+//! method of [extracting](JwtLayer::with_extract) the token from the request.
 
 use {
     crate::{
@@ -26,6 +68,37 @@ use {
     tower_service::Service,
 };
 
+/// Creates a [layer](JwtLayer) for middleware.
+///
+/// # Examples
+///
+/// ```
+/// use {
+///     axum::{Router, routing},
+///     axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
+/// };
+///
+/// // This handler will be called only if the token is successfully validated.
+/// async fn hello() -> String {
+///     "Hello, Anonimus!".to_owned()
+/// }
+///
+/// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+///
+/// let app = Router::new()
+///     .route("/", routing::get(hello))
+///     .layer(axum_jwt::layer(decoder));
+/// # let _: Router = app;
+/// ```
+pub fn layer(decoder: Decoder) -> JwtLayer {
+    JwtLayer {
+        decoder,
+        validate: Discard,
+        store: |_, _| {},
+        extract: PhantomData,
+    }
+}
+
 /// Layer type for creating middleware.
 ///
 /// To configure the layer and create the middleware service, call
@@ -38,6 +111,59 @@ pub struct JwtLayer<I = IgnoredAny, H = Discard, X = Bearer> {
 }
 
 impl<I, X> JwtLayer<I, Discard, X> {
+    /// Sets a filter for additional validation.
+    ///
+    /// By default, the layer only validates the token header, ignoring all
+    /// its claims. This method allows you to specify an arbitrary data type
+    /// for the claims and perform additional token checks.
+    ///
+    /// The claims type must implement [`Deserialize`](serde::Deserialize).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use {
+    ///     axum::{Router, routing},
+    ///     axum_jwt::{Decoder, Token, jsonwebtoken::DecodingKey},
+    ///     serde::Deserialize,
+    /// };
+    ///
+    /// #[derive(Deserialize)]
+    /// struct User {
+    ///     roles: Vec<String>,
+    /// }
+    ///
+    /// // Checks that the user's token contains the admin role.
+    /// fn check_access(t: &Token<User>) -> bool {
+    ///     t.claims.roles.iter().any(|role| role == "admin")
+    /// }
+    ///
+    /// // Called only if the role check is successful.
+    /// async fn hello() -> String {
+    ///     "Hello, Admin!".to_owned()
+    /// }
+    ///
+    /// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+    ///
+    /// let app = Router::new()
+    ///     .route("/", routing::get(hello))
+    ///     .layer(axum_jwt::layer(decoder).with_filter(check_access));
+    /// # let _: Router = app;
+    /// ```
+    ///
+    /// If you also need to use the token inside the handler,
+    /// see the [`store_to_extension`](JwtLayer::store_to_extension) method.
+    ///
+    /// # Callback return value
+    ///
+    /// The return value of the provided callback can be:
+    ///
+    /// * `bool`: where `true` means validation succeeded, and `false` means
+    ///   it failed, returning an HTTP status code `401 Unauthorized`.
+    /// * `Result<(), E>`: where `Ok(())` means validation succeeded
+    ///   and `Err(e)` means it failed. The error type must implement
+    ///   [`IntoResponse`], which will be called on failure to return the
+    ///   corresponding response.
     pub fn with_filter<H, N, O>(self, validate: H) -> JwtLayer<N, H, X>
     where
         H: FnMut(&Token<N>) -> O,
@@ -66,7 +192,7 @@ impl<I, H, X> JwtLayer<I, H, X> {
     }
 }
 
-impl<I, H> JwtLayer<I, H, Bearer> {
+impl<I, H> JwtLayer<I, H> {
     pub fn with_extract<X>(self, extract: X) -> JwtLayer<I, H, X>
     where
         X: Extract,
@@ -120,37 +246,6 @@ where
             store: self.store,
             extract: PhantomData,
         }
-    }
-}
-
-/// Creates a [layer](JwtLayer) for middleware.
-///
-/// # Examples
-///
-/// ```
-/// use {
-///     axum::{Router, routing},
-///     axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
-/// };
-///
-/// // This handler will be called only if the token is successfully validated.
-/// async fn hello() -> String {
-///     "Hello, Anonimus!".to_owned()
-/// }
-///
-/// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
-///
-/// let app = Router::new()
-///     .route("/", routing::get(hello))
-///     .layer(axum_jwt::layer(decoder));
-/// # let _: Router = app;
-/// ```
-pub fn layer(decoder: Decoder) -> JwtLayer {
-    JwtLayer {
-        decoder,
-        validate: Discard,
-        store: |_, _| {},
-        extract: PhantomData,
     }
 }
 
@@ -212,6 +307,9 @@ where
 /// Axum [middleware] for token validation.
 ///
 /// [middleware]: https://docs.rs/axum/latest/axum/middleware/index.html
+///
+/// To configure the layer and create the middleware service, call
+/// the [`layer`] function.
 pub struct Jwt<S, I, H = Discard, X = Bearer> {
     svc: S,
     decoder: Decoder,
