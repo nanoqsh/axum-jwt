@@ -4,7 +4,7 @@ use {
     crate::{
         decode::Decoder,
         error::Error,
-        extract::{Bearer, Extract},
+        extract::{Bearer, Extract, Token},
     },
     axum_core::{
         extract::Request,
@@ -27,17 +27,20 @@ use {
 };
 
 /// Layer type for creating middleware.
-pub struct JwtLayer<I, H = Discard, X = Bearer> {
+///
+/// To configure the layer and create the middleware service, call
+/// the [`layer`] function.
+pub struct JwtLayer<I = IgnoredAny, H = Discard, X = Bearer> {
     decoder: Decoder,
     validate: H,
-    store: fn(I, &mut Extensions),
+    store: fn(Token<I>, &mut Extensions),
     extract: PhantomData<X>,
 }
 
 impl<I, X> JwtLayer<I, Discard, X> {
     pub fn with_filter<H, N, O>(self, validate: H) -> JwtLayer<N, H, X>
     where
-        H: FnMut(&N) -> O,
+        H: FnMut(&Token<N>) -> O,
         N: DeserializeOwned,
         O: Output,
     {
@@ -47,6 +50,19 @@ impl<I, X> JwtLayer<I, Discard, X> {
             store: |_, _| {},
             extract: PhantomData,
         }
+    }
+}
+
+impl<I, H, X> JwtLayer<I, H, X> {
+    pub fn store_to_extension(mut self) -> Self
+    where
+        I: Clone + Send + Sync + 'static,
+    {
+        self.store = |claims, extensions| {
+            extensions.insert(claims);
+        };
+
+        self
     }
 }
 
@@ -62,18 +78,6 @@ impl<I, H> JwtLayer<I, H, Bearer> {
             store: self.store,
             extract: PhantomData,
         }
-    }
-
-    pub fn store_to_extension<O>(mut self) -> Self
-    where
-        H: FnMut(&I) -> O,
-        I: Clone + Send + Sync + 'static,
-    {
-        self.store = |claims, extensions| {
-            extensions.insert(claims);
-        };
-
-        self
     }
 }
 
@@ -119,8 +123,29 @@ where
     }
 }
 
-/// Creates a layer for middleware.
-pub fn layer(decoder: Decoder) -> JwtLayer<IgnoredAny> {
+/// Creates a [layer](JwtLayer) for middleware.
+///
+/// # Examples
+///
+/// ```
+/// use {
+///     axum::{Router, routing},
+///     axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
+/// };
+///
+/// // This handler will be called only if the token is successfully validated.
+/// async fn hello() -> String {
+///     "Hello, Anonimus!".to_owned()
+/// }
+///
+/// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+///
+/// let app = Router::new()
+///     .route("/", routing::get(hello))
+///     .layer(axum_jwt::layer(decoder));
+/// # let _: Router = app;
+/// ```
+pub fn layer(decoder: Decoder) -> JwtLayer {
     JwtLayer {
         decoder,
         validate: Discard,
@@ -132,7 +157,7 @@ pub fn layer(decoder: Decoder) -> JwtLayer<IgnoredAny> {
 /// Trait for additional token validation.
 pub trait Validate<I> {
     type Output: Output;
-    fn validate(&mut self, input: &I) -> Self::Output;
+    fn validate(&mut self, input: &Token<I>) -> Self::Output;
 }
 
 /// The output value of the [validation](Validate).
@@ -166,20 +191,20 @@ pub struct Discard;
 impl<I> Validate<I> for Discard {
     type Output = bool;
 
-    fn validate(&mut self, _: &I) -> Self::Output {
+    fn validate(&mut self, _: &Token<I>) -> Self::Output {
         true
     }
 }
 
 impl<F, I, O> Validate<I> for F
 where
-    F: FnMut(&I) -> O,
+    F: FnMut(&Token<I>) -> O,
     I: DeserializeOwned,
     O: Output,
 {
     type Output = O;
 
-    fn validate(&mut self, input: &I) -> Self::Output {
+    fn validate(&mut self, input: &Token<I>) -> Self::Output {
         self(input)
     }
 }
@@ -191,7 +216,7 @@ pub struct Jwt<S, I, H = Discard, X = Bearer> {
     svc: S,
     decoder: Decoder,
     validate: H,
-    store: fn(I, &mut Extensions),
+    store: fn(Token<I>, &mut Extensions),
     extract: PhantomData<X>,
 }
 
@@ -243,22 +268,22 @@ where
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
-        let validate = |parts| -> Result<I, Error> {
+        let validate = |parts| -> Result<Token<I>, Error> {
             let token = X::extract(parts).ok_or(Error::Extract)?;
-            let TokenData { claims, .. }: TokenData<I> =
+            let TokenData { header, claims }: TokenData<I> =
                 self.decoder.decode(token).map_err(Error::Jwt)?;
 
-            Ok(claims)
+            Ok(Token::new(header, claims))
         };
 
         let (mut parts, body) = req.into_parts();
         match validate(&mut parts) {
-            Ok(claims) => {
-                if let Some(res) = self.validate.validate(&claims).output() {
+            Ok(token) => {
+                if let Some(res) = self.validate.validate(&token).output() {
                     return JwtFuture::ready(res);
                 }
 
-                (self.store)(claims, &mut parts.extensions);
+                (self.store)(token, &mut parts.extensions);
 
                 let req = Request::from_parts(parts, body);
                 let clone = self.svc.clone();

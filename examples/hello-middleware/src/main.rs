@@ -1,6 +1,6 @@
 use {
     axum::{Extension, Router, routing},
-    axum_jwt::{Decoder, jsonwebtoken::DecodingKey},
+    axum_jwt::{Decoder, Token, jsonwebtoken::DecodingKey},
     serde::Deserialize,
     std::io::Result,
     tokio::net::TcpListener,
@@ -13,16 +13,16 @@ struct User {
     roles: Vec<String>,
 }
 
-fn check_access(u: &User) -> bool {
-    u.roles.iter().any(|role| role == "admin")
+fn check_access(t: &Token<User>) -> bool {
+    t.claims.roles.iter().any(|role| role == "admin")
 }
 
 async fn hello() -> String {
     "Hello, Anonimus!".to_owned()
 }
 
-async fn hello_with_name(Extension(u): Extension<User>) -> String {
-    format!("Hello, {}!", u.sub)
+async fn hello_with_name(Extension(t): Extension<Token<User>>) -> String {
+    format!("Hello, {}!", t.claims.sub)
 }
 
 #[tokio::main]
