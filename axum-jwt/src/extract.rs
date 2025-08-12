@@ -11,6 +11,8 @@ use {
 ///
 /// [extractor]: https://docs.rs/axum/latest/axum/extract/index.html
 ///
+/// If you just need to get claims, use the [`Claims`] extractor.
+///
 /// # Examples
 ///
 /// Extract the [header](Header) and claims from a token:

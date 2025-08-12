@@ -1,5 +1,8 @@
 //! Middleware types and traits.
 //!
+//! If you just need to access token data in a handler, use
+//! the [`Token`] and [`Claims`](crate::Claims) extractors directly.
+//!
 //! The [`layer`] function creates a configurable axum [middleware] layer.
 //! When a request is made to a handler wrapped in this layer, the
 //! JSON Web Token is validated. If validation succeeds, the handler is called.
@@ -183,6 +186,11 @@ impl<I, H, X> JwtLayer<I, H, X> {
     /// Configures the layer to store the token in the [extension].
     ///
     /// [extension]: https://docs.rs/axum/latest/axum/struct.Extension.html
+    ///
+    /// If you just need to access token data in a handler, use
+    /// the [`Token`] and [`Claims`](crate::Claims) extractors directly.
+    /// This function is useful only if you want to use the middleware
+    /// but still access token data in some handlers.
     ///
     /// After calling this method, the middleware will store the parsed token
     /// in the extension, which can later be retrieved, for example,
