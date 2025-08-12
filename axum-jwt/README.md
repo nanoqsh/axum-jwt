@@ -15,7 +15,7 @@ The library provides [extractors](https://docs.rs/axum/latest/axum/extract/index
 
 ## Example
 
-In this example, the request token is validated and the user ID is extracted:
+In this example, the request token is validated and the username is extracted:
 
 ```rust
 use {

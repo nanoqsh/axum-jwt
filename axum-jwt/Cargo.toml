@@ -22,8 +22,9 @@ tower-layer.workspace = true
 tower-service.workspace = true
 
 [dev-dependencies]
-axum.workspace = true
+axum = { workspace = true, features = ["tokio"] }
 serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["net"] }
 
 [lints]
 workspace = true

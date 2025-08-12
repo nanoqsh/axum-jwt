@@ -52,6 +52,46 @@ use {
 ///     .with_state(decoder);
 /// # let _: Router = app;
 /// ```
+///
+/// # Custom token extractor
+///
+/// By default, the token is extracted from the `Authorization` header using
+/// the `Bearer` scheme. If you want to change this behavior, create a new type
+/// and implement [`Extract`] for it. Then, you can use it by specifying it as
+/// a generic parameter:
+///
+/// ```
+/// use {
+///     axum::{Router, http::request::Parts, routing},
+///     axum_jwt::{Decoder, Extract, Token, jsonwebtoken::DecodingKey},
+///     serde::Deserialize,
+/// };
+///
+/// struct Custom;
+///
+/// impl Extract for Custom {
+///     fn extract(parts: &mut Parts) -> Option<&str> {
+///         parts.headers.get("X-Auth-Token")?.to_str().ok()
+///     }
+/// }
+///
+/// #[derive(Deserialize)]
+/// struct User {
+///     sub: String,
+/// }
+///
+/// // Apply the custom token extractor.
+/// async fn hello(Token { claims, .. }: Token<User, Custom>) -> String {
+///     format!("Hello, {}!", claims.sub)
+/// }
+///
+/// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+///
+/// let app = Router::new()
+///     .route("/", routing::get(hello))
+///     .with_state(decoder);
+/// # let _: Router = app;
+/// ```
 pub struct Token<T = IgnoredAny, X = Bearer> {
     pub header: Header,
     pub claims: T,
@@ -59,6 +99,7 @@ pub struct Token<T = IgnoredAny, X = Bearer> {
 }
 
 impl<T, X> Token<T, X> {
+    /// Creates a new token.
     pub fn new(header: Header, claims: T) -> Self {
         Self {
             header,

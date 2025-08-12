@@ -75,6 +75,7 @@ dependencies = [
  "jsonwebtoken",
  "pin-project-lite",
  "serde",
+ "tokio",
  "tower-layer",
  "tower-service",
 ]
@@ -132,6 +133,16 @@ name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+
+[[package]]
+name = "custom-header"
+version = "0.1.1"
+dependencies = [
+ "axum",
+ "axum-jwt",
+ "serde",
+ "tokio",
+]
 
 [[package]]
 name = "fnv"

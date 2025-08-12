@@ -25,12 +25,18 @@
 //!     "Hello, Anonimus!".to_owned()
 //! }
 //!
+//! # async fn f() -> std::io::Result<()> {
 //! let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
 //!
 //! let app = Router::new()
 //!     .route("/", routing::get(hello))
 //!     .layer(axum_jwt::layer(decoder));
-//! # let _: Router = app;
+//!
+//! # use tokio::net::TcpListener;
+//! let listener = TcpListener::bind("0.0.0.0:3000").await?;
+//! axum::serve(listener, app).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Configuration
@@ -310,6 +316,38 @@ impl<I, H, X> JwtLayer<I, H, X> {
 }
 
 impl<I, H> JwtLayer<I, H> {
+    /// Applies a token extractor to the layer.
+    ///
+    /// By default, the token is extracted from the `Authorization` header using
+    /// the `Bearer` scheme. If you want to change this behavior, create a new type
+    /// and implement [`Extract`] for it. Then, you can pass this type into the
+    /// layer configuration:
+    ///
+    /// ```
+    /// use {
+    ///     axum::{Extension, Router, http::request::Parts, routing},
+    ///     axum_jwt::{Decoder, Extract, Token, jsonwebtoken::DecodingKey},
+    /// };
+    ///
+    /// struct Custom;
+    ///
+    /// impl Extract for Custom {
+    ///     fn extract(parts: &mut Parts) -> Option<&str> {
+    ///         parts.headers.get("X-Auth-Token")?.to_str().ok()
+    ///     }
+    /// }
+    ///
+    /// async fn hello(Extension(t): Extension<Token>) -> String {
+    ///     format!("Decoded with {:?} algorithm", t.header.alg)
+    /// }
+    ///
+    /// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+    ///
+    /// let app = Router::new()
+    ///     .route("/", routing::get(hello))
+    ///     .layer(axum_jwt::layer(decoder).with_extract(Custom));
+    /// # let _: Router = app;
+    /// ```
     pub fn with_extract<X>(self, extract: X) -> JwtLayer<I, H, X>
     where
         X: Extract,
