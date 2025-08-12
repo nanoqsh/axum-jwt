@@ -145,7 +145,7 @@ impl fmt::Debug for Decoder {
 
 impl<P> FromRef<P> for Decoder
 where
-    P: Deref<Target: AsRef<Decoder>>,
+    P: Deref<Target: AsRef<Self>>,
 {
     fn from_ref(p: &P) -> Self {
         p.as_ref().clone()

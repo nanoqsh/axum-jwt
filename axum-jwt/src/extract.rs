@@ -105,7 +105,7 @@ where
         let token = X::extract(parts).ok_or(Error::Extract)?;
         let decoder = Decoder::from_ref(state);
         let TokenData { header, claims } = decoder.decode(token).map_err(Error::Jwt)?;
-        Ok(Token::new(header, claims))
+        Ok(Self::new(header, claims))
     }
 }
 
@@ -167,7 +167,7 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let Token { claims, .. }: Token<_> = Token::from_request_parts(parts, state).await?;
-        Ok(Claims(claims))
+        Ok(Self(claims))
     }
 }
 

@@ -27,3 +27,16 @@ serde = "1.0.219"
 tokio = "1.47.0"
 tower-layer = "0.3.3"
 tower-service = "0.3.3"
+
+[workspace.lints.rust]
+elided-lifetimes-in-paths = "deny"
+
+[workspace.lints.clippy]
+large-futures = "deny"
+manual-assert = "deny"
+match-wildcard-for-single-variants = "deny"
+missing-assert-message = "deny"
+semicolon-if-nothing-returned = "deny"
+trivially-copy-pass-by-ref = "deny"
+use-self = "deny"
+unwrap-used = "deny"

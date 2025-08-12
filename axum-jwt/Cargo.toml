@@ -24,3 +24,6 @@ tower-service.workspace = true
 [dev-dependencies]
 axum.workspace = true
 serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

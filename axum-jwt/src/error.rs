@@ -36,8 +36,8 @@ where
 {
     fn into_response(self) -> Response {
         match self {
-            Error::Extract | Error::Jwt(_) => StatusCode::UNAUTHORIZED.into_response(),
-            Error::Custom(u) => u.into_response(),
+            Self::Extract | Self::Jwt(_) => StatusCode::UNAUTHORIZED.into_response(),
+            Self::Custom(u) => u.into_response(),
         }
     }
 }
