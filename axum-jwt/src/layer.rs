@@ -159,7 +159,7 @@ impl<I, X> JwtLayer<I, Discard, X> {
     /// The return value of the provided callback can be:
     ///
     /// * `bool`: where `true` means validation succeeded, and `false` means
-    ///   it failed, returning an HTTP status code `401 Unauthorized`.
+    ///   it failed returning an HTTP status code `401 Unauthorized`.
     /// * `Result<(), E>`: where `Ok(())` means validation succeeded
     ///   and `Err(e)` means it failed. The error type must implement
     ///   [`IntoResponse`], which will be called on failure to return the
@@ -180,6 +180,115 @@ impl<I, X> JwtLayer<I, Discard, X> {
 }
 
 impl<I, H, X> JwtLayer<I, H, X> {
+    /// Configures the layer to store the token in the [extension].
+    ///
+    /// [extension]: https://docs.rs/axum/latest/axum/struct.Extension.html
+    ///
+    /// After calling this method, the middleware will store the parsed token
+    /// in the extension, which can later be retrieved, for example,
+    /// in a handler.
+    ///
+    /// The token is stored only after *successful validation*, including
+    /// the configured [filter](JwtLayer::with_filter). This is usually what
+    /// you want, but if you reuse the handler elsewhere, keep in mind that
+    /// extracting it from [`Extension`] may fail.
+    ///
+    /// [`Extension`]: https://docs.rs/axum/latest/axum/struct.Extension.html
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use {
+    ///     axum::{Extension, Router, routing},
+    ///     axum_jwt::{Decoder, Token, jsonwebtoken::DecodingKey},
+    ///     serde::Deserialize,
+    /// };
+    ///
+    /// // To store a value in the extension, it must implement `Clone`.
+    /// #[derive(Clone, Deserialize)]
+    /// struct User {
+    ///     sub: String,
+    ///     roles: Vec<String>,
+    /// }
+    ///
+    /// // Checks that the user's token contains the admin role.
+    /// fn check_access(t: &Token<User>) -> bool {
+    ///     t.claims.roles.iter().any(|role| role == "admin")
+    /// }
+    ///
+    /// // Called only if the role check is successful.
+    /// async fn hello(Extension(t): Extension<Token<User>>) -> String {
+    ///     // We can also access the parsed token
+    ///     format!("Hello, {}!", t.claims.sub)
+    /// }
+    ///
+    /// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+    ///
+    /// let app = Router::new()
+    ///     .route("/", routing::get(hello))
+    ///     .layer(
+    ///         axum_jwt::layer(decoder)
+    ///             .with_filter(check_access)
+    ///             .store_to_extension(),
+    ///     );
+    /// # let _: Router = app;
+    /// ```
+    ///
+    /// <section class="warning">
+    ///
+    /// Note that the `store_to_extension` call comes after setting
+    /// the `with_filter` filter.
+    ///
+    /// This is important because
+    /// `store_to_extension` applies to the current token type.
+    /// The `with_filter` call may change the type and therefore it always
+    /// resets the `store_to_extension` configuration.
+    ///
+    /// ```
+    /// # use {
+    /// #     axum::{Router, routing},
+    /// #     axum_jwt::{Decoder, Token, jsonwebtoken::DecodingKey},
+    /// # };
+    /// # fn check_access(t: &Token) -> bool { true }
+    /// # async fn hello() {}
+    /// # let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+    /// let app = Router::new()
+    ///     .route("/", routing::get(hello))
+    ///     .layer(
+    ///         axum_jwt::layer(decoder)
+    ///             // Incorrect order!
+    ///             .store_to_extension()
+    ///             .with_filter(check_access),
+    ///     );
+    /// # let _: Router = app;
+    /// ```
+    ///
+    /// </section>
+    ///
+    /// # Read header only
+    ///
+    /// If you just need to retrieve the token without any additional payload,
+    /// omit the `with_filter` call and use the `Token` type without
+    /// a parameter:
+    ///
+    /// ```
+    /// use {
+    ///     axum::{Extension, Router, routing},
+    ///     axum_jwt::{Decoder, Token, jsonwebtoken::DecodingKey},
+    /// };
+    ///
+    /// async fn hello(Extension(t): Extension<Token>) -> String {
+    ///     // Access the parsed token
+    ///     format!("Decoded with {:?} algorithm", t.header.alg)
+    /// }
+    ///
+    /// let decoder = Decoder::from_key(DecodingKey::from_secret(b"secret"));
+    ///
+    /// let app = Router::new()
+    ///     .route("/", routing::get(hello))
+    ///     .layer(axum_jwt::layer(decoder).store_to_extension());
+    /// # let _: Router = app;
+    /// ```
     pub fn store_to_extension(mut self) -> Self
     where
         I: Clone + Send + Sync + 'static,

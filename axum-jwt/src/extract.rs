@@ -3,7 +3,7 @@ use {
     axum_core::extract::{FromRef, FromRequestParts},
     http::request::Parts,
     jsonwebtoken::{Header, TokenData},
-    serde::de::DeserializeOwned,
+    serde::de::{DeserializeOwned, IgnoredAny},
     std::{any, fmt, marker::PhantomData},
 };
 
@@ -27,7 +27,7 @@ use {
 /// }
 ///
 /// async fn hello(Token { header, claims, .. }: Token<User>) -> String {
-///     format!("decoded with {:?} algorithm: {}", header.alg, claims.sub)
+///     format!("Decoded with {:?} algorithm: {}", header.alg, claims.sub)
 /// }
 /// ```
 ///
@@ -50,7 +50,7 @@ use {
 ///     .with_state(decoder);
 /// # let _: Router = app;
 /// ```
-pub struct Token<T, X = Bearer> {
+pub struct Token<T = IgnoredAny, X = Bearer> {
     pub header: Header,
     pub claims: T,
     extract: PhantomData<X>,
