@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "axum-jwt"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "axum-core",
@@ -136,7 +136,7 @@ checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
 name = "custom-header"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "axum-jwt",
@@ -204,7 +204,7 @@ checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 
 [[package]]
 name = "hello"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "axum-jwt",
@@ -214,7 +214,7 @@ dependencies = [
 
 [[package]]
 name = "hello-middleware"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "axum-jwt",
