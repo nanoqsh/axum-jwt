@@ -116,7 +116,7 @@ pub struct JwtLayer<I = IgnoredAny, H = Discard, X = Bearer> {
     decoder: Decoder,
     validate: H,
     store: fn(Token<I>, &mut Extensions),
-    extract: PhantomData<X>,
+    extract: PhantomData<fn() -> X>,
 }
 
 impl<I, X> JwtLayer<I, Discard, X> {
@@ -470,7 +470,7 @@ pub struct Jwt<S, I, H = Discard, X = Bearer> {
     decoder: Decoder,
     validate: H,
     store: fn(Token<I>, &mut Extensions),
-    extract: PhantomData<X>,
+    extract: PhantomData<fn() -> X>,
 }
 
 impl<S, I, H, X> Clone for Jwt<S, I, H, X>

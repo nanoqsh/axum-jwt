@@ -95,7 +95,7 @@ use {
 pub struct Token<T = IgnoredAny, X = Bearer> {
     pub header: Header,
     pub claims: T,
-    extract: PhantomData<X>,
+    extract: PhantomData<fn() -> X>,
 }
 
 impl<T, X> Token<T, X> {
