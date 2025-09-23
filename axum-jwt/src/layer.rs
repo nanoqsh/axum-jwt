@@ -391,7 +391,7 @@ impl<S, I, H, X> Layer<S> for JwtLayer<I, H, X>
 where
     H: Clone,
 {
-    type Service = Jwt<S, I, H>;
+    type Service = Jwt<S, I, H, X>;
 
     fn layer(&self, svc: S) -> Self::Service {
         Jwt {
