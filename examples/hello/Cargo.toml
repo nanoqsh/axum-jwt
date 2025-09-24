@@ -2,6 +2,7 @@
 name = "hello"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 axum-jwt.workspace = true
